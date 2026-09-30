@@ -9,7 +9,6 @@
  *    и robots.txt с Disallow: /, карту сайта не выкладывает;
  *  - отключает отправку заявки: на Pages нет lead.php, а живые люди
  *    не должны оставлять здесь телефоны;
- *  - добавляет плашку «тестовая копия».
  *
  * canonical и разметка schema.org остаются с боевым адресом — так и нужно.
  *
@@ -28,12 +27,6 @@ const DIST = path.join(ROOT, 'dist');
 const OUT = path.join(ROOT, 'staging', 'docs');
 const BASE = '/silatechniki-staging';
 
-const BANNER =
-  '<div style="position:relative;z-index:1000;background:#FAEBC8;color:#7E5900;' +
-  'font:500 14px/1.4 system-ui,sans-serif;text-align:center;padding:8px 12px;border-bottom:1px solid #F2B01E">' +
-  'Тестовая копия сайта для просмотра. Заявки отсюда не отправляются — ' +
-  'звоните по телефону на странице.</div>';
-
 // Заявку перехватываем раньше обработчика сайта (фаза захвата).
 const FORM_STUB =
   '<script>document.addEventListener("submit",function(e){' +
@@ -43,7 +36,7 @@ const FORM_STUB =
 const prefix = (u) => (u.startsWith('//') ? u : BASE + u);
 
 function rewriteHtml(html) {
-  html = html
+  return html
     // одиночные адреса в атрибутах
     .replace(/\b(href|src|action|poster|data-src)="(\/[^"]*)"/g, (m, a, u) => `${a}="${prefix(u)}"`)
     // srcset: список «адрес ширина»
@@ -55,7 +48,6 @@ function rewriteHtml(html) {
     .replace(/<meta name="robots"[^>]*>/g, '')
     .replace('</head>', '<meta name="robots" content="noindex, nofollow">\n' + FORM_STUB + '\n</head>')
     .replace(/<link rel="sitemap"[^>]*>/g, '');
-  return html.replace(/<body([^>]*)>/, (m) => m + BANNER);
 }
 
 function rewriteCss(css) {
