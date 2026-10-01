@@ -45,6 +45,9 @@ function rewriteHtml(html) {
     // url(/…) во встроенных стилях
     .replace(/url\((['"]?)(\/[^)'"]*)\1\)/g, (m, q, u) => `url(${q}${prefix(u)}${q})`)
     // индексация
+    // Картинка для превью ссылок в мессенджерах — с тестового сайта, а не с боевого
+    .replace(/(<meta (?:property="og:image"|name="twitter:image") content=")https:\/\/[^/"]+(\/[^"]*)"/g,
+      (m, head, u) => `${head}https://vladimir-iti.github.io${BASE}${u}"`)
     .replace(/<meta name="robots"[^>]*>/g, '')
     .replace('</head>', '<meta name="robots" content="noindex, nofollow">\n' + FORM_STUB + '\n</head>')
     .replace(/<link rel="sitemap"[^>]*>/g, '');
