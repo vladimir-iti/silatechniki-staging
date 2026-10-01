@@ -16,7 +16,11 @@ document.documentElement.classList.add('js');
   let lastY = window.scrollY, turnY = lastY;
   function onScroll() {
     const y = window.scrollY;
-    if (header) header.classList.toggle('is-small', y > 80);
+    // Сжимаем после 100px, разжимаем только у самого верха — без «дребезга» на пороге
+    if (header) {
+      if (y > 100) header.classList.add('is-small');
+      else if (y < 20) header.classList.remove('is-small');
+    }
     if (header) {
       if (y <= 80) header.classList.remove('is-down');
       else if (y > lastY) { header.classList.add('is-down'); turnY = y; }
@@ -93,7 +97,31 @@ document.documentElement.classList.add('js');
     return out;
   }
 
+  // «+7 » стоит в поле сразу: человек вводит только номер без кода страны
+  var PREFIX = '+7 ';
+  function digitsOf(v) {
+    var s = String(v);
+    if (s.slice(0, 2) === '+7') {
+      var rest = s.slice(2).replace(/\D/g, '');
+      // вставили номер целиком (8 905… или 7 905…) поверх «+7» — код не дублируем
+      if (rest.length === 11 && /^[78]/.test(rest)) rest = rest.slice(1);
+      return '7' + rest;
+    }
+    return s.replace(/\D/g, '');
+  }
+
   document.querySelectorAll('input[type="tel"]').forEach(function (input) {
+    if (!input.value) input.value = PREFIX;
+    // после form.reset() (повторное открытие окна заявки) возвращаем «+7 »
+    if (input.form) input.form.addEventListener('reset', function () {
+      setTimeout(function () { input.value = PREFIX; }, 0);
+    });
+    // курсор не должен вставать внутрь «+7»
+    input.addEventListener('focus', function () {
+      setTimeout(function () {
+        if (input.selectionStart < PREFIX.length) input.setSelectionRange(input.value.length, input.value.length);
+      }, 0);
+    });
     input.addEventListener('input', function () {
       // Считаем цифры слева от курсора — по ним восстановим позицию после
       // переформатирования. Иначе курсор улетает в конец и править середину
@@ -101,7 +129,8 @@ document.documentElement.classList.add('js');
       var caret = input.selectionStart;
       var digitsBefore = input.value.slice(0, caret).replace(/\D/g, '').length;
 
-      input.value = format(input.value.replace(/\D/g, ''));
+      var dg = digitsOf(input.value);
+      input.value = dg.length <= 1 ? PREFIX : format(dg);
 
       var seen = 0;
       var pos = input.value.length;
@@ -111,7 +140,7 @@ document.documentElement.classList.add('js');
           if (seen === digitsBefore) { pos = i + 1; break; }
         }
       }
-      if (digitsBefore === 0) pos = input.value.length;
+      if (digitsBefore <= 1) pos = input.value.length;
       try { input.setSelectionRange(pos, pos); } catch (_) {}
     });
   });
@@ -185,7 +214,7 @@ document.documentElement.classList.add('js');
       var ev = el.type === 'checkbox' ? 'change' : 'blur';
       el.addEventListener(ev, function () {
         // Пустое поле, которого ещё не касались, краснеть не должно
-        if (el.type !== 'checkbox' && el.value === '') return;
+        if (el.type !== 'checkbox' && (el.value === '' || (el.type === 'tel' && el.value.replace(/\D/g, '').length <= 1))) return;
         mark(el);
       });
       el.addEventListener('input', function () { fieldOf(el)?.classList.remove('is-bad'); });
@@ -218,6 +247,8 @@ document.documentElement.classList.add('js');
     // Источник заявки: с какой страницы и с какой кнопки пришёл человек
     source.value = 'popup-' + page + (link.dataset.leadSource ? '-' + link.dataset.leadSource : '');
     dlg.showModal();
+    // Для аналитики: окно открыли (цель LEAD_POPUP в Метрике, см. Analytics.astro)
+    document.dispatchEvent(new CustomEvent('lead:popup'));
     const first = dlg.querySelector('input:not([type=hidden]):not([tabindex="-1"])');
     if (first) first.focus();
   }
@@ -274,6 +305,40 @@ document.documentElement.classList.add('js');
     el.textContent = fmt(0, parseInt(el.dataset.decimals || '0', 10));
     io.observe(el);
   });
+})();
+
+/* --- картинки и схемы в статьях: увеличение поверх страницы ---
+   Схема в статье — ссылка на свой файл. Без JS ссылка открывает файл как раньше,
+   с JS — окно поверх статьи: закрывается крестиком, Esc, кликом по фону или по картинке. */
+(function () {
+  const prose = document.querySelector('.prose');
+  if (!prose) return;
+  const dlg = document.createElement('dialog');
+  dlg.className = 'lbx';
+  dlg.innerHTML = '<button type="button" class="lbx__close" aria-label="Закрыть">×</button><img class="lbx__img" alt="">';
+  document.body.appendChild(dlg);
+  if (typeof dlg.showModal !== 'function') return;
+  const img = dlg.querySelector('.lbx__img');
+
+  function open(src, alt) {
+    img.src = src; img.alt = alt || '';
+    dlg.showModal();
+  }
+  // Фотографии без ссылки тоже можно увеличить
+  prose.querySelectorAll('img').forEach(function (i) {
+    if (!i.closest('a')) i.style.cursor = 'zoom-in';
+  });
+  prose.addEventListener('click', function (e) {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    const i = e.target.closest('img');
+    if (!i) return;
+    const a = i.closest('a');
+    if (a && !/\.(svg|png|jpe?g|webp)$/i.test(a.getAttribute('href') || '')) return;
+    e.preventDefault();
+    open(a ? a.href : (i.currentSrc || i.src), i.alt);
+  });
+  dlg.addEventListener('click', function () { dlg.close(); });
+  dlg.addEventListener('close', function () { img.removeAttribute('src'); });
 })();
 
 /* --- видео с объектов --- */
