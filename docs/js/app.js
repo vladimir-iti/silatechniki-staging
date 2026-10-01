@@ -8,9 +8,21 @@ document.documentElement.classList.add('js');
 
   // Без rAF-троттлинга намеренно: два вызова classList.toggle стоят дешевле,
   // чем риск залипшего флага, если кадр анимации не придёт (свёрнутая вкладка).
+  // Верхняя полоса шапки: уезжает при прокрутке вниз, возвращается при прокрутке вверх.
+  // Возвращаем только после заметного движения вверх (UP px): когда полоса прячется,
+  // шапка становится ниже, браузер сам отматывает прокрутку на эти пиксели — это
+  // не должно считаться прокруткой вверх, иначе полоса начнёт мигать.
+  const UP = 60;
+  let lastY = window.scrollY, turnY = lastY;
   function onScroll() {
     const y = window.scrollY;
     if (header) header.classList.toggle('is-small', y > 80);
+    if (header) {
+      if (y <= 80) header.classList.remove('is-down');
+      else if (y > lastY) { header.classList.add('is-down'); turnY = y; }
+      else if (turnY - y > UP) header.classList.remove('is-down');
+      lastY = y;
+    }
     if (bar) bar.classList.toggle('is-in', y > 400);
   }
   window.addEventListener('scroll', onScroll, { passive: true });
@@ -178,6 +190,89 @@ document.documentElement.classList.add('js');
       });
       el.addEventListener('input', function () { fieldOf(el)?.classList.remove('is-bad'); });
     });
+  });
+})();
+
+/* --- заявка во всплывающем окне ---
+   Любая ссылка на #zayavka открывает окно с формой вместо прокрутки к форме.
+   Без JS или без <dialog> ссылка работает как обычный якорь. */
+(function () {
+  const dlg = document.querySelector('[data-lead-popup]');
+  if (!dlg || typeof dlg.showModal !== 'function') return;
+  const titleEl = dlg.querySelector('[data-lead-popup-title]');
+  const source = dlg.querySelector('input[name="source"]');
+  const form = dlg.querySelector('form[data-lead]');
+  const done = dlg.querySelector('[data-lead-done]');
+  const page = location.pathname.replace(/^\/+|\.html$/g, '') || 'glavnaya';
+  let opener = null;
+
+  function open(link) {
+    opener = link;
+    // После отправленной заявки окно снова показывает форму, а не «Заявка принята»
+    if (done && !done.hidden && form) {
+      done.hidden = true; form.hidden = false; form.reset();
+      const btn = form.querySelector('[type="submit"]');
+      if (btn && btn.dataset.label) { btn.disabled = false; btn.textContent = btn.dataset.label; }
+    }
+    titleEl.textContent = link.dataset.leadTitle || dlg.dataset.defaultTitle;
+    // Источник заявки: с какой страницы и с какой кнопки пришёл человек
+    source.value = 'popup-' + page + (link.dataset.leadSource ? '-' + link.dataset.leadSource : '');
+    dlg.showModal();
+    const first = dlg.querySelector('input:not([type=hidden]):not([tabindex="-1"])');
+    if (first) first.focus();
+  }
+
+  document.addEventListener('click', function (e) {
+    const link = e.target.closest && e.target.closest('a[href="#zayavka"]');
+    if (!link || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    e.preventDefault();
+    open(link);
+  });
+
+  dlg.querySelector('[data-lead-close]').addEventListener('click', function () { dlg.close(); });
+  // Клик по затемнению вокруг окна закрывает его
+  dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
+  dlg.addEventListener('close', function () { if (opener) opener.focus({ preventScroll: true }); });
+})();
+
+/* --- цифры компании: докручиваются от нуля при появлении на экране ---
+   В разметке сразу стоят итоговые значения: без JS, без IntersectionObserver
+   и при «уменьшении движения» ничего не анимируем. */
+(function () {
+  const els = document.querySelectorAll('[data-count]');
+  if (!els.length || !('IntersectionObserver' in window)) return;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const fmt = (v, d) => v.toFixed(d).replace('.', ',');
+
+  function run(el) {
+    const to = parseFloat(el.dataset.count);
+    const d = parseInt(el.dataset.decimals || '0', 10);
+    const dur = 1400;
+    let t0 = null;
+    function step(t) {
+      if (t0 === null) t0 = t;
+      const k = Math.min((t - t0) / dur, 1);
+      const eased = 1 - Math.pow(1 - k, 3);          // быстро в начале, мягко в конце
+      el.textContent = fmt(to * eased, d);
+      if (k < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  const io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (!e.isIntersecting) return;
+      io.unobserve(e.target);
+      run(e.target);
+    });
+  }, { threshold: 0.6 });
+
+  els.forEach(function (el) {
+    const r = el.getBoundingClientRect();
+    // То, что уже на экране при загрузке, не сбрасываем в ноль — сразу крутим
+    if (r.top < window.innerHeight && r.bottom > 0) { run(el); return; }
+    el.textContent = fmt(0, parseInt(el.dataset.decimals || '0', 10));
+    io.observe(el);
   });
 })();
 
